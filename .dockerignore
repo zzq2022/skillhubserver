@@ -1,0 +1,31 @@
+# ---- 版本控制 / VCS ----
+.git
+.gitignore
+
+# ---- 前端 / Frontend ----
+# 镜像内会重新安装依赖并构建，避免拷入宿主机产物（可能平台不兼容）。
+frontend/node_modules
+frontend/dist
+
+# ---- 后端 / Backend ----
+backend/.venv
+**/__pycache__
+**/*.pyc
+backend/.pytest_cache
+backend/.ruff_cache
+backend/.mypy_cache
+
+# ---- 本地运行数据 / Local runtime data ----
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ---- 环境与密钥 / Env & secrets ----
+.env
+
+# ---- 文档与编辑器 / Docs & editor ----
+docs/
+.kiro/
+.vscode/
+.idea/

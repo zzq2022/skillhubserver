@@ -1,0 +1,1 @@
+"""SkillHub Server application package."""

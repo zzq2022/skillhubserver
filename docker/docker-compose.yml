@@ -1,0 +1,52 @@
+# ============================================================
+# skillhubserver — docker-compose
+# ------------------------------------------------------------
+# 本文件位于 docker/ 目录，构建上下文指向仓库根目录（context: ..），
+# 以便 Dockerfile 能访问 backend/ 与 frontend/。
+#
+# 用法 / Usage:
+#   docker compose -f docker/docker-compose.yml up --build
+#
+# 默认使用 SQLite（开箱即用，单容器）。
+# 如需 PostgreSQL，见文件底部被注释的 `db` 服务与相关配置。
+# ============================================================
+
+services:
+  skillhubserver:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: skillhubserver:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      # 命名卷持久化数据根目录（SQLite 数据库、技能工作区、媒体上传）。
+      - skillhub_data:/app/data
+    env_file:
+      # 相对 compose 文件所在目录（docker/）向上一级，即仓库根目录的 .env。
+      - ../.env
+    restart: unless-stopped
+
+    # ---- PostgreSQL 模式（可选）/ PostgreSQL mode (optional) ----
+    # 取消下面 depends_on 的注释，并在 .env 中设置：
+    #   DATABASE_TYPE=postgresql
+    #   DATABASE_URL=postgresql+asyncpg://user:pass@db:5432/skillhub
+    # 同时取消文件底部 `db` 服务与 `pg_data` 卷的注释。
+    # depends_on:
+    #   - db
+
+  # ---- PostgreSQL 服务（默认禁用）/ PostgreSQL service (disabled by default) ----
+  # db:
+  #   image: postgres:16-alpine
+  #   volumes:
+  #     - pg_data:/var/lib/postgresql/data
+  #   environment:
+  #     POSTGRES_DB: skillhub
+  #     POSTGRES_USER: user
+  #     POSTGRES_PASSWORD: pass
+  #   restart: unless-stopped
+
+volumes:
+  skillhub_data:
+  # 启用 PostgreSQL 时取消注释：
+  # pg_data:
