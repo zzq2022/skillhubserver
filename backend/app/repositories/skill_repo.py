@@ -85,6 +85,12 @@ class SkillRepository:
         assert isinstance(self._session, AsyncSession)
         return await self._session.get(Skill, skill_id)
 
+    async def get_by_slug_any_owner_async(self, slug: str) -> Skill | None:
+        assert isinstance(self._session, AsyncSession)
+        stmt = select(Skill).where(Skill.slug == slug)
+        result = await self._session.scalars(stmt)
+        return result.first()
+
     async def get_by_owner_slug_async(self, owner_id: str, slug: str) -> Skill | None:
         assert isinstance(self._session, AsyncSession)
         stmt = select(Skill).where(Skill.owner_id == owner_id, Skill.slug == slug)

@@ -145,17 +145,13 @@ class ImportExportService:
             except ValueError as exc:
                 raise ImportError_("invalid_skill_name", str(exc)) from exc
 
-            existing = await self._repo.get_by_owner_slug_async(user.id, slug)
+            existing = await self._repo.get_by_slug_any_owner_async(slug)
             if existing is not None:
-                # Disambiguate slug
-                base = slug
-                n = 2
-                while await self._repo.get_by_owner_slug_async(
-                    user.id, f"{base}-{n}"
-                ) is not None:
-                    n += 1
-                slug = f"{base}-{n}"
-                name = slug
+                raise ImportError_(
+                    "skill_exists",
+                    f"该技能名称「{slug}」已存在，只有管理员才能下架或删除原有技能后再行提交。",
+                    409,
+                )
 
             description = meta.get("description")
             if description is not None:
