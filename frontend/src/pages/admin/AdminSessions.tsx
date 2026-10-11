@@ -18,6 +18,23 @@ export function AdminSessions() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [sessionDetail, setSessionDetail] = useState<ChatSessionDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<string | null>(null)
+
+  const handleSyncPull = async () => {
+    setSyncing(true)
+    setError(null)
+    setSyncMsg(null)
+    try {
+      const res = await adminApi.probeClients()
+      setSyncMsg(`拉取完成：探测在线 ${res.onlineCount} 台，拉取同步 ${res.syncedSessionsCount} 条会话`)
+      await fetchSessions(search, clientIdFilter)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '拉取客户端会话失败')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const fetchSessions = async (q = '', clientId = '') => {
     setLoading(true)
@@ -84,19 +101,44 @@ export function AdminSessions() {
             查看由各客户端上报的会话轨迹记录、统计指标与问答详情
           </p>
         </div>
-        {clientIdFilter && (
+        <div className="flex items-center gap-2">
+          {clientIdFilter && (
+            <button
+              onClick={() => {
+                setClientIdFilter('')
+                searchParams.delete('clientId')
+                setSearchParams(searchParams)
+              }}
+              className="px-3 py-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-xs text-indigo-300 hover:bg-indigo-500/20 transition"
+            >
+              清除设备筛选（全部会话）
+            </button>
+          )}
           <button
-            onClick={() => {
-              setClientIdFilter('')
-              searchParams.delete('clientId')
-              setSearchParams(searchParams)
-            }}
-            className="px-3 py-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-xs text-indigo-300 hover:bg-indigo-500/20 transition"
+            onClick={handleSyncPull}
+            disabled={syncing}
+            className="px-3.5 py-1.5 rounded-lg border border-indigo-500/40 bg-indigo-600 hover:bg-indigo-500 text-xs text-white font-medium transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
           >
-            清除设备筛选（全部会话）
+            {syncing ? (
+              <>
+                <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                正在拉取...
+              </>
+            ) : (
+              <>
+                <span>🔄</span>
+                刷新并从客户端拉取会话
+              </>
+            )}
           </button>
-        )}
+        </div>
       </div>
+
+            {syncMsg && (
+        <p className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3">
+          {syncMsg}
+        </p>
+      )}
 
       {error && (
         <p className="text-sm text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-xl px-4 py-3">

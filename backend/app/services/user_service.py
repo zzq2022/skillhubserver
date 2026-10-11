@@ -131,6 +131,13 @@ class UserService:
             )
             or 0
         )
+        online_users = (
+            await self._session.scalar(
+                select(func.count(func.distinct(ClientInstance.user_id)))
+                .where(ClientInstance.last_heartbeat_at >= online_threshold, ClientInstance.user_id.is_not(None))
+            )
+            or 0
+        )
         total_clients = (
             await self._session.scalar(
                 select(func.count()).select_from(ClientInstance)
@@ -150,6 +157,7 @@ class UserService:
             "public_skills": public_skills,
             "pending_reviews": pending,
             "online_clients": online_clients,
+            "online_users": online_users,
             "total_clients": total_clients,
             "chat_sessions": chat_sessions,
         }

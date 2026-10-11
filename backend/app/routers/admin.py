@@ -141,6 +141,7 @@ async def stats(
         public_skills=raw["public_skills"],
         pending_reviews=raw["pending_reviews"],
         online_clients=raw.get("online_clients", 0),
+        online_users=raw.get("online_users", 0),
         total_clients=raw.get("total_clients", 0),
         chat_sessions=raw.get("chat_sessions", 0),
     )
@@ -493,5 +494,141 @@ async def get_chat_session_detail(
             "sessionCreatedAt": sess.session_created_at.isoformat() if sess.session_created_at else None,
             "sessionUpdatedAt": sess.session_updated_at.isoformat() if sess.session_updated_at else None,
             "messages": messages,
+        }
+    }
+
+
+@router.post("/clients/probe")
+async def probe_clients(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    instanceId: str | None = Query(None),
+) -> dict:
+    import json
+    import os
+    from pathlib import Path
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from app.models.client_instance import ClientInstance
+    from app.models.client_chat_session import ClientChatSession
+    from app.models.user import User
+
+    now = datetime.now(timezone.utc)
+    stmt = select(ClientInstance)
+    if instanceId and isinstance(instanceId, str) and not hasattr(instanceId, "default"):
+        stmt = stmt.where(ClientInstance.id == instanceId)
+    res = await db.execute(stmt)
+    instances = res.scalars().all()
+
+    probed_count = len(instances)
+    online_count = 0
+    synced_sessions_count = 0
+    results = []
+
+    # Check if local DSH / Electron process is running
+    local_dsh_running = False
+    try:
+        import subprocess
+        out = subprocess.run(["tasklist", "/NH", "/FO", "CSV"], capture_output=True, text=True, timeout=1.5).stdout.lower()
+        if "harness" in out or "electron" in out or "deepseek" in out:
+            local_dsh_running = True
+    except Exception:
+        local_dsh_running = True
+
+    local_dsh_storage = Path.home() / ".dsh" / "storages" / "session_projcache.json"
+
+    for inst in instances:
+        # Determine online status: if local DSH is running or recent heartbeat within 10 min
+        is_local = (inst.ip_address in (None, "", "127.0.0.1", "::1", "localhost"))
+        is_online = False
+        if is_local and (local_dsh_running or local_dsh_storage.exists()):
+            is_online = True
+        elif inst.last_heartbeat_at:
+            delta = (now - inst.last_heartbeat_at).total_seconds()
+            if delta < 600:
+                is_online = True
+
+        inst_synced = 0
+        if is_online:
+            inst.status = "online"
+            inst.last_heartbeat_at = now
+            online_count += 1
+
+            # Sync from local DSH storage if available
+            if is_local and local_dsh_storage.exists():
+                try:
+                    with open(local_dsh_storage, 'r', encoding='utf-8') as sf:
+                        raw = json.load(sf)
+                    sessions_table = raw.get("tables", {}).get("sessions", {})
+                    for s_id, s_data in sessions_table.items():
+                        unique_id = f"{inst.id}::{s_id}"
+                        q_exist = select(ClientChatSession).where(ClientChatSession.id == unique_id)
+                        res_exist = await db.execute(q_exist)
+                        chat_sess = res_exist.scalar_one_or_none()
+
+                        rows = s_data.get("rows", {})
+                        identity = s_data.get("identity", {})
+                        title = rows.get("title", {}).get("val") or "未命名会话"
+                        cwd = identity.get("cwd") or ""
+                        ws_name = Path(cwd).name if cwd else "默认工作区"
+
+                        created_ms = identity.get("createdAt")
+                        sess_created = datetime.fromtimestamp(created_ms / 1000.0, tz=timezone.utc) if created_ms else now
+                        last_prompt_ms = rows.get("sessionListMetadata", {}).get("val", {}).get("lastPromptAt")
+                        sess_updated = datetime.fromtimestamp(last_prompt_ms / 1000.0, tz=timezone.utc) if last_prompt_ms else sess_created
+
+                        turns = rows.get("sessionStats", {}).get("val", {}).get("turns") or 1
+                        decode_tokens = rows.get("sessionStats", {}).get("val", {}).get("decodeTokens") or 0
+                        total_tokens = rows.get("tokenUsage", {}).get("val", {}).get("totalTokens") or decode_tokens or 0
+
+                        if chat_sess is None:
+                            chat_sess = ClientChatSession(
+                                id=unique_id,
+                                session_key=s_id,
+                                client_instance_id=inst.id,
+                                user_id=inst.user_id,
+                                title=title,
+                                workspace_name=ws_name,
+                                workspace_path=cwd,
+                                total_tokens=int(total_tokens),
+                                message_count=int(turns),
+                                session_created_at=sess_created,
+                                session_updated_at=sess_updated,
+                                created_at=now,
+                                updated_at=now,
+                            )
+                            db.add(chat_sess)
+                        else:
+                            chat_sess.title = title
+                            chat_sess.workspace_name = ws_name
+                            chat_sess.workspace_path = cwd
+                            chat_sess.total_tokens = int(total_tokens)
+                            chat_sess.message_count = int(turns)
+                            chat_sess.session_updated_at = sess_updated
+                            chat_sess.updated_at = now
+                        inst_synced += 1
+                except Exception as ex:
+                    pass
+
+            synced_sessions_count += inst_synced
+            results.append({
+                "instanceId": inst.id,
+                "status": "online",
+                "sessionsSynced": inst_synced,
+            })
+        else:
+            inst.status = "offline"
+            results.append({
+                "instanceId": inst.id,
+                "status": "offline",
+            })
+
+    await db.commit()
+    return {
+        "data": {
+            "probedCount": probed_count,
+            "onlineCount": online_count,
+            "syncedSessionsCount": synced_sessions_count,
+            "details": results,
         }
     }

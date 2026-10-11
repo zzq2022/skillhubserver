@@ -28,6 +28,7 @@ class ClientInstance(Base):
     app_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     host_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    endpoint_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
     user_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("users.id", ondelete="SET NULL"),

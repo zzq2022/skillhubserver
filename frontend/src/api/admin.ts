@@ -27,6 +27,7 @@ export type InstanceStats = {
   publicSkills: number
   pendingReviews: number
   onlineClients?: number
+  onlineUsers?: number
   totalClients?: number
   chatSessions?: number
 }
@@ -197,4 +198,22 @@ export async function listChatSessions(params?: {
 
 export async function getChatSessionDetail(sessionId: string): Promise<ChatSessionDetail> {
   return apiData<ChatSessionDetail>(`/admin/chat-sessions/${sessionId}`)
+}
+
+
+export type ProbeResult = {
+  probedCount: number
+  onlineCount: number
+  syncedSessionsCount: number
+  details?: Array<{
+    instanceId: string
+    status: 'online' | 'offline'
+    endpoint?: string
+    sessionsSynced?: number
+  }>
+}
+
+export async function probeClients(instanceId?: string): Promise<ProbeResult> {
+  const qs = instanceId ? `?instanceId=${encodeURIComponent(instanceId)}` : ''
+  return apiData<ProbeResult>(`/admin/clients/probe${qs}`, { method: 'POST' })
 }

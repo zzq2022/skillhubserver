@@ -39,6 +39,7 @@ class ClientHeartbeatRequest(BaseModel):
     osPlatform: str | None = None
     appVersion: str | None = None
     hostVersion: str | None = None
+    endpointUrl: str | None = None
 
 
 class SessionSyncItem(BaseModel):
@@ -80,6 +81,7 @@ async def client_heartbeat(
             os_platform=body.osPlatform,
             app_version=body.appVersion,
             host_version=body.hostVersion,
+            endpoint_url=body.endpointUrl,
             ip_address=ip_address,
             user_id=actor.id if actor else None,
             status="online",
@@ -100,6 +102,8 @@ async def client_heartbeat(
             instance.app_version = body.appVersion
         if body.hostVersion:
             instance.host_version = body.hostVersion
+        if body.endpointUrl:
+            instance.endpoint_url = body.endpointUrl
         if ip_address:
             instance.ip_address = ip_address
         if actor:

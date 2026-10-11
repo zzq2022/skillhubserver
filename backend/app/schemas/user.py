@@ -40,6 +40,7 @@ class InstanceStats(BaseModel):
     public_skills: int = Field(serialization_alias="publicSkills")
     pending_reviews: int = Field(serialization_alias="pendingReviews")
     online_clients: int = Field(default=0, serialization_alias="onlineClients")
+    online_users: int = Field(default=0, serialization_alias="onlineUsers")
     total_clients: int = Field(default=0, serialization_alias="totalClients")
     chat_sessions: int = Field(default=0, serialization_alias="chatSessions")
 
