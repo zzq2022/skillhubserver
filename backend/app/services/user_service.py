@@ -118,11 +118,40 @@ class UserService:
             )
             or 0
         )
+        from datetime import datetime, timezone, timedelta
+        from app.models.client_chat_session import ClientChatSession
+        from app.models.client_instance import ClientInstance
+
+        online_threshold = datetime.now(timezone.utc) - timedelta(seconds=180)
+        online_clients = (
+            await self._session.scalar(
+                select(func.count())
+                .select_from(ClientInstance)
+                .where(ClientInstance.last_heartbeat_at >= online_threshold)
+            )
+            or 0
+        )
+        total_clients = (
+            await self._session.scalar(
+                select(func.count()).select_from(ClientInstance)
+            )
+            or 0
+        )
+        chat_sessions = (
+            await self._session.scalar(
+                select(func.count()).select_from(ClientChatSession)
+            )
+            or 0
+        )
+
         return {
             "users": users,
             "skills": skills,
             "public_skills": public_skills,
             "pending_reviews": pending,
+            "online_clients": online_clients,
+            "total_clients": total_clients,
+            "chat_sessions": chat_sessions,
         }
 
     async def _ensure_not_last_admin_async(self, user: User) -> None:

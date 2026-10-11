@@ -140,6 +140,9 @@ async def stats(
         skills=raw["skills"],
         public_skills=raw["public_skills"],
         pending_reviews=raw["pending_reviews"],
+        online_clients=raw.get("online_clients", 0),
+        total_clients=raw.get("total_clients", 0),
+        chat_sessions=raw.get("chat_sessions", 0),
     )
     return {"data": data.model_dump(by_alias=True)}
 
@@ -271,3 +274,224 @@ async def publish_skill(
     service = ReviewService(db)
     skill = await service.publish_async(skill_id, admin)
     return {"data": _skill_admin_out(skill)}
+
+
+# ---- Client Tracking & Session Auditing Endpoints --------------------------
+
+@router.get("/clients")
+async def list_clients(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    q: str | None = Query(None),
+) -> dict:
+    import json
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import select, func, or_
+    from app.models.client_instance import ClientInstance
+    from app.models.client_chat_session import ClientChatSession
+    from app.models.user import User
+
+    now = datetime.now(timezone.utc)
+    online_threshold = now - timedelta(seconds=180)
+
+    total_count = await db.scalar(select(func.count()).select_from(ClientInstance)) or 0
+    online_count = (
+        await db.scalar(
+            select(func.count())
+            .select_from(ClientInstance)
+            .where(ClientInstance.last_heartbeat_at >= online_threshold)
+        )
+        or 0
+    )
+
+    query = (
+        select(ClientInstance, User.username)
+        .outerjoin(User, ClientInstance.user_id == User.id)
+        .order_by(ClientInstance.last_heartbeat_at.desc())
+    )
+
+    if q:
+        kw = f"%{q.strip()}%"
+        query = query.where(
+            or_(
+                ClientInstance.machine_name.ilike(kw),
+                ClientInstance.id.ilike(kw),
+                ClientInstance.os_platform.ilike(kw),
+                User.username.ilike(kw),
+            )
+        )
+
+    items_stmt = query.offset(offset).limit(limit)
+    res = await db.execute(items_stmt)
+    rows = res.all()
+
+    inst_ids = [inst.id for inst, _ in rows]
+    session_counts: dict[str, int] = {}
+    if inst_ids:
+        cnt_stmt = (
+            select(ClientChatSession.client_instance_id, func.count(ClientChatSession.id))
+            .where(ClientChatSession.client_instance_id.in_(inst_ids))
+            .group_by(ClientChatSession.client_instance_id)
+        )
+        cnt_res = await db.execute(cnt_stmt)
+        for i_id, c in cnt_res.all():
+            session_counts[i_id] = c
+
+    items = []
+    for inst, username in rows:
+        last_hb = inst.last_heartbeat_at
+        if last_hb and last_hb.tzinfo is None:
+            last_hb = last_hb.replace(tzinfo=timezone.utc)
+        is_online = (last_hb >= online_threshold) if last_hb else False
+        items.append({
+            "id": inst.id,
+            "machineName": inst.machine_name or "未知设备",
+            "osPlatform": inst.os_platform or "unknown",
+            "appVersion": inst.app_version or "0.0.1",
+            "hostVersion": inst.host_version or "",
+            "ipAddress": inst.ip_address or "",
+            "userId": inst.user_id,
+            "username": username or "未登录",
+            "isOnline": is_online,
+            "status": "online" if is_online else "offline",
+            "lastHeartbeatAt": inst.last_heartbeat_at.isoformat() if inst.last_heartbeat_at else None,
+            "createdAt": inst.created_at.isoformat() if inst.created_at else None,
+            "sessionCount": session_counts.get(inst.id, 0),
+        })
+
+    return {
+        "data": {
+            "onlineCount": online_count,
+            "totalCount": total_count,
+            "items": items,
+        },
+        "pagination": {
+            "page": (offset // limit) + 1 if limit else 1,
+            "pageSize": limit,
+            "total": total_count,
+        },
+    }
+
+
+@router.get("/chat-sessions")
+async def list_chat_sessions(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    clientId: str | None = Query(None),
+    userId: str | None = Query(None),
+    q: str | None = Query(None),
+) -> dict:
+    from sqlalchemy import select, func, or_
+    from app.models.client_chat_session import ClientChatSession
+    from app.models.client_instance import ClientInstance
+    from app.models.user import User
+
+    query = (
+        select(ClientChatSession, User.username, ClientInstance.machine_name)
+        .outerjoin(User, ClientChatSession.user_id == User.id)
+        .outerjoin(ClientInstance, ClientChatSession.client_instance_id == ClientInstance.id)
+        .order_by(ClientChatSession.session_updated_at.desc())
+    )
+
+    if clientId:
+        query = query.where(ClientChatSession.client_instance_id == clientId)
+    if userId:
+        query = query.where(ClientChatSession.user_id == userId)
+    if q:
+        kw = f"%{q.strip()}%"
+        query = query.where(
+            or_(
+                ClientChatSession.title.ilike(kw),
+                ClientChatSession.workspace_name.ilike(kw),
+                ClientChatSession.session_key.ilike(kw),
+                User.username.ilike(kw),
+            )
+        )
+
+    total = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    res = await db.execute(query.offset(offset).limit(limit))
+    rows = res.all()
+
+    items = []
+    for sess, username, machine_name in rows:
+        items.append({
+            "id": sess.id,
+            "sessionKey": sess.session_key,
+            "instanceId": sess.client_instance_id,
+            "machineName": machine_name or "未知设备",
+            "userId": sess.user_id,
+            "username": username or "未登录",
+            "title": sess.title,
+            "workspaceName": sess.workspace_name or "默认工作区",
+            "workspacePath": sess.workspace_path or "",
+            "totalTokens": sess.total_tokens,
+            "messageCount": sess.message_count,
+            "sessionCreatedAt": sess.session_created_at.isoformat() if sess.session_created_at else None,
+            "sessionUpdatedAt": sess.session_updated_at.isoformat() if sess.session_updated_at else None,
+            "updatedAt": sess.updated_at.isoformat() if sess.updated_at else None,
+        })
+
+    return {
+        "data": items,
+        "pagination": {
+            "page": (offset // limit) + 1 if limit else 1,
+            "pageSize": limit,
+            "total": total,
+        },
+    }
+
+
+@router.get("/chat-sessions/{session_id}")
+async def get_chat_session_detail(
+    session_id: str,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    import json
+    from sqlalchemy import select
+    from fastapi import HTTPException
+    from app.models.client_chat_session import ClientChatSession
+    from app.models.client_instance import ClientInstance
+    from app.models.user import User
+
+    stmt = (
+        select(ClientChatSession, User.username, ClientInstance.machine_name)
+        .outerjoin(User, ClientChatSession.user_id == User.id)
+        .outerjoin(ClientInstance, ClientChatSession.client_instance_id == ClientInstance.id)
+        .where(ClientChatSession.id == session_id)
+    )
+    res = await db.execute(stmt)
+    row = res.one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+
+    sess, username, machine_name = row
+    messages = []
+    if sess.messages_json:
+        try:
+            messages = json.loads(sess.messages_json)
+        except Exception:
+            messages = []
+
+    return {
+        "data": {
+            "id": sess.id,
+            "sessionKey": sess.session_key,
+            "instanceId": sess.client_instance_id,
+            "machineName": machine_name or "未知设备",
+            "userId": sess.user_id,
+            "username": username or "未登录",
+            "title": sess.title,
+            "workspaceName": sess.workspace_name or "默认工作区",
+            "workspacePath": sess.workspace_path or "",
+            "totalTokens": sess.total_tokens,
+            "messageCount": sess.message_count,
+            "sessionCreatedAt": sess.session_created_at.isoformat() if sess.session_created_at else None,
+            "sessionUpdatedAt": sess.session_updated_at.isoformat() if sess.session_updated_at else None,
+            "messages": messages,
+        }
+    }

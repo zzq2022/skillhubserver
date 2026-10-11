@@ -39,5 +39,8 @@ class InstanceStats(BaseModel):
     skills: int
     public_skills: int = Field(serialization_alias="publicSkills")
     pending_reviews: int = Field(serialization_alias="pendingReviews")
+    online_clients: int = Field(default=0, serialization_alias="onlineClients")
+    total_clients: int = Field(default=0, serialization_alias="totalClients")
+    chat_sessions: int = Field(default=0, serialization_alias="chatSessions")
 
     model_config = {"populate_by_name": True}

@@ -39,7 +39,7 @@ def test_secret_key_required(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SECRET_KEY", raising=False)
     clear_settings_cache()
     with pytest.raises(ValidationError):
-        Settings()  # type: ignore[call-arg]
+        Settings(_env_file=None)  # type: ignore[call-arg]
 
 
 def test_get_settings_is_cached(monkeypatch: pytest.MonkeyPatch) -> None:

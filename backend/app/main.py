@@ -18,6 +18,7 @@ from app.routers import (
     admin,
     auth,
     bootstrap,
+    client_tracking,
     compat_auth,
     compat_skillhub,
     import_export,
@@ -46,6 +47,16 @@ def resolve_static_dir() -> Path | None:
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Eagerly validate settings at startup (fail fast if SECRET_KEY missing).
     get_settings()
+    # Auto-create tables if missing
+    try:
+        from app.database import get_engine, Base
+        import app.models  # noqa: F401
+        engine = get_engine()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception:
+        pass
+
     # Periodic expired-session cleanup (T10.3).
     from app.services.session_cleanup import start_session_cleanup_task
 
@@ -93,6 +104,7 @@ app.include_router(skillhub.router, prefix="/api/v1")
 # AgentWork-compatible surface for Hope (Bearer JWT, no /v1 prefix)
 app.include_router(compat_auth.router, prefix="/api")
 app.include_router(compat_skillhub.router, prefix="/api")
+app.include_router(client_tracking.router, prefix="/api")
 
 
 @app.exception_handler(AuthError)

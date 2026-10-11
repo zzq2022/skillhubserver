@@ -59,8 +59,11 @@ async def require_user(
     return user
 
 
-async def require_admin(user: Annotated[User, Depends(require_user)]) -> User:
-    """Require the authenticated user to have the admin role."""
+from app.middleware.dual_auth import require_dual_user
+
+
+async def require_admin(user: Annotated[User, Depends(require_dual_user)]) -> User:
+    """Require the authenticated user to have the admin role (supports Bearer and Cookie)."""
     if user.role != UserRole.ADMIN:
         raise AuthError("forbidden", "Admin privileges required", 403)
     return user

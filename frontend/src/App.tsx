@@ -7,8 +7,10 @@ import { BootstrapPage } from './pages/BootstrapPage'
 import { HubPage } from './pages/HubPage'
 import { LoginPage } from './pages/LoginPage'
 import {
+  AdminClients,
   AdminDashboard,
   AdminLayout,
+  AdminSessions,
   AdminSkills,
   AdminUsers,
 } from './pages/admin'
@@ -73,6 +75,8 @@ function Shell() {
         }
       >
         <Route index element={<AdminDashboard />} />
+        <Route path="clients" element={<AdminClients />} />
+        <Route path="sessions" element={<AdminSessions />} />
         <Route
           path="reviews"
           element={<Navigate to="/admin/skills?status=pending" replace />}

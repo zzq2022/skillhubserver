@@ -76,6 +76,8 @@
     "title": "管理",
     "nav": {
       "dashboard": "概览",
+      "clients": "客户端监控",
+      "sessions": "会话审计",
       "skills": "技能管理",
       "users": "用户管理"
     },

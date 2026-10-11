@@ -5,6 +5,8 @@ import { useAuth } from '../../contexts/AuthContext'
 
 const NAV = [
   { to: '/admin', end: true, labelKey: 'admin.nav.dashboard' },
+  { to: '/admin/clients', end: false, labelKey: 'admin.nav.clients' },
+  { to: '/admin/sessions', end: false, labelKey: 'admin.nav.sessions' },
   { to: '/admin/skills', end: false, labelKey: 'admin.nav.skills' },
   { to: '/admin/users', end: false, labelKey: 'admin.nav.users' },
 ] as const
@@ -55,7 +57,7 @@ export function AdminLayout() {
                 key={item.to}
                 to={item.to}
                 end={item.end}
-                className={({ isActive }) =>
+                className={({ isActive }: { isActive: boolean }) =>
                   'px-3 py-2 rounded-lg text-sm whitespace-nowrap transition ' +
                   (isActive
                     ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'

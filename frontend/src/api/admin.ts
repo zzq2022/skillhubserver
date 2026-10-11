@@ -26,6 +26,9 @@ export type InstanceStats = {
   skills: number
   publicSkills: number
   pendingReviews: number
+  onlineClients?: number
+  totalClients?: number
+  chatSessions?: number
 }
 
 export async function listUsers() {
@@ -114,4 +117,84 @@ export async function unpublishSkill(skillId: string) {
 
 export async function publishSkill(skillId: string) {
   return apiData<AdminSkill>(`/admin/skills/${skillId}/publish`, { method: 'POST' })
+}
+
+export type ClientInstance = {
+  id: string
+  machineName: string
+  osPlatform: string
+  appVersion: string
+  hostVersion: string
+  ipAddress: string
+  userId: string | null
+  username: string
+  isOnline: boolean
+  status: 'online' | 'offline'
+  lastHeartbeatAt: string | null
+  createdAt: string | null
+  sessionCount: number
+}
+
+export async function listClients(params?: {
+  q?: string
+  offset?: number
+  limit?: number
+}): Promise<{ items: ClientInstance[]; onlineCount: number; totalCount: number }> {
+  const sp = new URLSearchParams()
+  if (params?.q) sp.set('q', params.q)
+  if (params?.offset != null) sp.set('offset', String(params.offset))
+  if (params?.limit != null) sp.set('limit', String(params.limit))
+  const qs = sp.toString()
+  return apiData<{ onlineCount: number; totalCount: number; items: ClientInstance[] }>(
+    `/admin/clients${qs ? `?${qs}` : ''}`
+  )
+}
+
+export type ChatSessionAuditItem = {
+  id: string
+  sessionKey: string
+  instanceId: string
+  machineName: string
+  userId: string | null
+  username: string
+  title: string
+  workspaceName: string
+  workspacePath: string
+  totalTokens: number
+  messageCount: number
+  sessionCreatedAt: string | null
+  sessionUpdatedAt: string | null
+  updatedAt: string | null
+}
+
+export type ChatMessage = {
+  role: string
+  content: string
+  timestamp?: string
+}
+
+export type ChatSessionDetail = ChatSessionAuditItem & {
+  messages: ChatMessage[]
+}
+
+export async function listChatSessions(params?: {
+  clientId?: string
+  userId?: string
+  q?: string
+  offset?: number
+  limit?: number
+}): Promise<{ items: ChatSessionAuditItem[]; total: number }> {
+  const sp = new URLSearchParams()
+  if (params?.clientId) sp.set('clientId', params.clientId)
+  if (params?.userId) sp.set('userId', params.userId)
+  if (params?.q) sp.set('q', params.q)
+  if (params?.offset != null) sp.set('offset', String(params.offset))
+  if (params?.limit != null) sp.set('limit', String(params.limit))
+  const qs = sp.toString()
+  const res = await apiDataList<ChatSessionAuditItem>(`/admin/chat-sessions${qs ? `?${qs}` : ''}`)
+  return { items: res.data ?? [], total: res.pagination?.total ?? 0 }
+}
+
+export async function getChatSessionDetail(sessionId: string): Promise<ChatSessionDetail> {
+  return apiData<ChatSessionDetail>(`/admin/chat-sessions/${sessionId}`)
 }
